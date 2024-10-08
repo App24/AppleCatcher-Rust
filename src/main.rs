@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use bevy::{
+    math::bounding::{Aabb2d, IntersectsVolume},
     prelude::*,
-    transform::commands,
-    window::{EnabledButtons, PresentMode, PrimaryWindow, WindowResolution},
+    window::{EnabledButtons, PresentMode, PrimaryWindow},
 };
 use bevy_asset_loader::{
     asset_collection::AssetCollection,
@@ -11,14 +11,25 @@ use bevy_asset_loader::{
 };
 use rand::Rng;
 
+const PLAYER_MOVEMENT_SPEED: f32 = 300.;
+const APPLE_MOVEMENT_SPEED: f32 = 150.;
+
 #[derive(Component)]
-struct Player(f32, i32);
+struct Player;
 
 #[derive(Component)]
 struct Apple;
 
+#[derive(Component)]
+struct SpriteSize(Vec2);
+
 #[derive(Resource)]
-struct AppleSpawner {
+struct Scoreboard {
+    score: i32,
+}
+
+#[derive(Resource)]
+struct AppleSpawnerConfig {
     timer: Timer,
 }
 
@@ -67,7 +78,13 @@ fn main() {
         .add_systems(Update, use_asset_handles.run_if(in_state(GameState::Next)))
         .add_systems(
             Update,
-            (player_movement, apple_movement, apple_spawning).run_if(in_state(GameState::Loaded)),
+            (
+                apple_catching,
+                player_movement,
+                apple_movement,
+                apple_spawning,
+            )
+                .run_if(in_state(GameState::Loaded)),
         )
         // .add_systems(Update, test)
         .run();
@@ -75,6 +92,7 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
+    commands.insert_resource(Scoreboard { score: 0 });
 }
 
 fn use_asset_handles(
@@ -92,39 +110,35 @@ fn use_asset_handles(
         commands
             .spawn(SpriteBundle {
                 transform: Transform {
-                    translation: Vec3::new(0., -window.height() / 2. + texture_size.y / 2., 0.0),
+                    translation: Vec3::new(0., -window.height() / 2. + texture_size.y / 2., 1.0),
                     ..default()
                 },
                 texture: texture_handle,
                 ..default()
             })
-            .insert(Player(300., 0));
+            .insert(Player)
+            .insert(SpriteSize(texture_size));
     }
     next_state.set(GameState::Loaded);
-    commands.insert_resource(AppleSpawner {
+    commands.insert_resource(AppleSpawnerConfig {
         timer: Timer::new(Duration::from_secs_f32(1.75), TimerMode::Repeating),
     });
 }
 
 fn player_movement(
-    mut player_query: Query<(&mut Transform, &Player, &Handle<Image>), With<Player>>,
+    mut player_query: Query<(&mut Transform, &SpriteSize), With<Player>>,
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    assets: Res<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let (mut transform, player, texture_handle) = player_query.single_mut();
-    let texture = match assets.get(texture_handle) {
-        Some(tex) => tex,
-        None => return,
-    };
-    let texture_size = texture.size_f32();
+    let (mut transform, size) = player_query.single_mut();
+    let texture_size = size.0;
     let window = match windows.get_single() {
         Ok(win) => win,
         Err(_) => return,
     };
 
-    let movement = player.0 * time.delta_seconds();
+    let movement = PLAYER_MOVEMENT_SPEED * time.delta_seconds();
 
     if keyboard_input.pressed(KeyCode::KeyA) {
         transform.translation.x -= movement;
@@ -142,25 +156,18 @@ fn player_movement(
 }
 
 fn apple_movement(
-    mut apple_query: Query<(&mut Transform, &Apple, Entity), With<Apple>>,
+    mut apple_query: Query<(&mut Transform, &SpriteSize, Entity), With<Apple>>,
     time: Res<Time>,
-    assets: Res<Assets<Image>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    image_assets: Res<ImageAssets>,
     mut commands: Commands,
 ) {
     let window = match windows.get_single() {
         Ok(win) => win,
         Err(_) => return,
     };
-    let texture = match assets.get(&image_assets.apple.clone()) {
-        Some(tex) => tex,
-        None => return,
-    };
-    let texture_size = texture.size_f32();
-    let bottom = -window.height() / 2. - texture_size.y / 4.;
-    for (mut transform, apple, entity) in apple_query.iter_mut() {
-        transform.translation.y -= 80. * time.delta_seconds();
+    for (mut transform, size, entity) in apple_query.iter_mut() {
+        transform.translation.y -= APPLE_MOVEMENT_SPEED * time.delta_seconds();
+        let bottom = -window.height() / 2. - (size.0.y * transform.scale.y) / 2.;
 
         if transform.translation.y < bottom {
             commands.entity(entity).despawn();
@@ -172,37 +179,66 @@ fn apple_spawning(
     mut commands: Commands,
     time: Res<Time>,
     image_assets: Res<ImageAssets>,
-    mut spawner: ResMut<AppleSpawner>,
+    mut spawner: ResMut<AppleSpawnerConfig>,
     windows: Query<&Window, With<PrimaryWindow>>,
     assets: Res<Assets<Image>>,
 ) {
-    let window = match windows.get_single() {
-        Ok(win) => win,
-        Err(_) => return,
-    };
     spawner.timer.tick(time.delta());
-
-    let texture = match assets.get(&image_assets.apple.clone()) {
-        Some(tex) => tex,
-        None => return,
-    };
-    let texture_size = texture.size_f32();
     if spawner.timer.finished() {
+        let window = match windows.get_single() {
+            Ok(win) => win,
+            Err(_) => return,
+        };
+
+        let texture = match assets.get(&image_assets.apple.clone()) {
+            Some(tex) => tex,
+            None => return,
+        };
+        let texture_size = texture.size_f32();
+        let top = window.height() / 2. + texture_size.y / 4.;
+
         let mut rng = rand::thread_rng();
         let spawn_range = (window.width() - (texture_size.x) / 2.) / 2.;
 
-        let spawn_x = rng.gen_range(-spawn_range..spawn_range);
+        let spawn_x = rng.gen_range(-spawn_range..=spawn_range);
 
         commands
             .spawn(SpriteBundle {
                 transform: Transform {
-                    translation: Vec3::new(spawn_x, 0., 0.),
+                    translation: Vec3::new(spawn_x, top, 0.),
                     scale: Vec3::splat(0.5),
                     ..default()
                 },
                 texture: image_assets.apple.clone(),
                 ..default()
             })
-            .insert(Apple);
+            .insert(Apple)
+            .insert(SpriteSize(texture_size));
+    }
+}
+
+fn apple_catching(
+    mut commands: Commands,
+    apple_query: Query<(&Transform, &SpriteSize, Entity), With<Apple>>,
+    player_query: Query<(&Transform, &SpriteSize), With<Player>>,
+    mut scoreboard: ResMut<Scoreboard>,
+) {
+    let (player_transform, player_size) = player_query.single();
+
+    let player_aabb = Aabb2d::new(
+        player_transform.translation.truncate(),
+        (player_size.0 * player_transform.scale.truncate()) / 2.,
+    );
+
+    for (transform, size, entity) in apple_query.iter() {
+        let box_aabb = Aabb2d::new(
+            transform.translation.truncate(),
+            (size.0 * transform.scale.truncate()) / 2.,
+        );
+        if player_aabb.intersects(&box_aabb) {
+            scoreboard.score += 1;
+            println!("Your score is now: {}", scoreboard.score);
+            commands.get_entity(entity).unwrap().despawn();
+        }
     }
 }
