@@ -23,6 +23,9 @@ struct Apple;
 #[derive(Component)]
 struct SpriteSize(Vec2);
 
+#[derive(Component)]
+struct PointsText;
+
 #[derive(Resource)]
 struct Scoreboard {
     score: i32,
@@ -93,6 +96,25 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
     commands.insert_resource(Scoreboard { score: 0 });
+    commands.spawn((
+        TextBundle::from_sections([
+            TextSection::new(
+                "Points: ",
+                TextStyle {
+                    font_size: 30.,
+                    ..default()
+                },
+            ),
+            TextSection::new(
+                "0",
+                TextStyle {
+                    font_size: 30.,
+                    ..default()
+                },
+            ),
+        ]),
+        PointsText,
+    ));
 }
 
 fn use_asset_handles(
@@ -222,8 +244,10 @@ fn apple_catching(
     apple_query: Query<(&Transform, &SpriteSize, Entity), With<Apple>>,
     player_query: Query<(&Transform, &SpriteSize), With<Player>>,
     mut scoreboard: ResMut<Scoreboard>,
+    mut points_text_query: Query<&mut Text, With<PointsText>>,
 ) {
     let (player_transform, player_size) = player_query.single();
+    let mut points_text = points_text_query.single_mut();
 
     let player_aabb = Aabb2d::new(
         player_transform.translation.truncate(),
@@ -237,7 +261,8 @@ fn apple_catching(
         );
         if player_aabb.intersects(&box_aabb) {
             scoreboard.score += 1;
-            println!("Your score is now: {}", scoreboard.score);
+            points_text.sections[1].value = scoreboard.score.to_string();
+            // println!("Your score is now: {}", scoreboard.score);
             commands.get_entity(entity).unwrap().despawn();
         }
     }
