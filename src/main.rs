@@ -13,12 +13,15 @@ struct ImageAssets {
     pub player: Handle<Image>,
     #[asset(path = "textures/apple.png")]
     pub apple: Handle<Image>,
+    #[asset(path = "textures/background.png")]
+    pub background: Handle<Image>,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
 enum GameState {
     #[default]
     Loading,
+    Loaded,
     MainMenu,
     Game,
 }
@@ -67,10 +70,11 @@ fn main() {
         .init_state::<PauseMode>()
         .add_loading_state(
             LoadingState::new(GameState::Loading)
-                .continue_to_state(GameState::MainMenu)
+                .continue_to_state(GameState::Loaded)
                 .load_collection::<ImageAssets>(),
         )
         .add_systems(Startup, setup)
+        .add_systems(OnEnter(GameState::Loaded), setup_background)
         .add_plugins(({ main_menu::main_menu_plugin }, { game::game_plugin }, {
             pause_menu::pause_menu_plugin
         }))
@@ -80,6 +84,20 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
+}
+
+fn setup_background(
+    mut commands: Commands,
+    image_assets: Res<ImageAssets>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    commands.spawn(SpriteBundle {
+        transform: Transform::from_translation(Vec3::new(0., 0., -1.)),
+        texture: image_assets.background.clone(),
+        ..default()
+    });
+    
+    game_state.set(GameState::MainMenu);
 }
 
 mod main_menu {
@@ -559,7 +577,7 @@ mod pause_menu {
         keyboard_input: Res<ButtonInput<KeyCode>>,
         mut game_state: ResMut<NextState<PauseMode>>,
     ) {
-        if keyboard_input.just_pressed(KeyCode::Escape){
+        if keyboard_input.just_pressed(KeyCode::Escape) {
             game_state.set(PauseMode::Playing);
         }
     }
