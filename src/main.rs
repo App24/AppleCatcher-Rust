@@ -150,6 +150,35 @@ mod main_menu {
                 NodeBundle {
                     style: Style {
                         width: Val::Percent(100.0),
+                        height: Val::Percent(50.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    ..default()
+                },
+                OnMainMenuScreen,
+            ))
+            .with_children(|parent| {
+                parent.spawn(TextBundle {
+                    text: Text::from_section(
+                        "AppleCatcher",
+                        TextStyle {
+                            font_size: 80.,
+                            ..default()
+                        },
+                    )
+                    .with_justify(JustifyText::Center),
+                    transform: Transform::from_translation(Vec3::splat(0.)),
+                    ..default()
+                });
+            });
+
+        commands
+            .spawn((
+                NodeBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
                         height: Val::Percent(100.0),
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
