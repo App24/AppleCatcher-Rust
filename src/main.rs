@@ -96,7 +96,7 @@ fn setup_background(
         texture: image_assets.background.clone(),
         ..default()
     });
-    
+
     game_state.set(GameState::MainMenu);
 }
 
